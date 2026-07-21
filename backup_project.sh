@@ -1,7 +1,6 @@
 #!/bin/bash
-# backup_project.sh
 
-echo "Backup Usecase 2 project"
+echo "Starting backup utility"
 
 TARGET_DIR="$1"
 BACKUP_DEST="$HOME/backups"
@@ -9,69 +8,72 @@ LOG_DIR="./logs"
 LOG_FILE="$LOG_DIR/backup_report.txt"
 START_TIME=$(date "+%Y-%m-%d %H:%M:%S")
 
-
 mkdir -p "$LOG_DIR"
 mkdir -p "$BACKUP_DEST"
 
-echo "Target Directory: $TARGET_DIR"
-echo "lets check the directory"
+echo "Target directory: $TARGET_DIR"
+echo "Validating directory"
 
 if [ -z "$TARGET_DIR" ]; then
-    echo "[ERROR]  target directory not provided"
-    echo "Usage: ./backup_project.sh <project_directory>"
+    echo "No target directory provided."
     exit 1
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
-    echo "[ERROR] Source directory does not look to exist "
+    echo "Source directory does not exist."
     exit 1
 fi
 
 if [ ! -r "$TARGET_DIR" ]; then
-    echo "[ERROR] Insufficient permissions"
+    echo "Insufficient permissions."
     STATUS="Failed"
-    WARNINGS="Permission denied on source directory."
+    WARNINGS="Permission denied."
     ARCHIVE_NAME="N/A"
     ARCHIVE_SIZE="0 MB"
 else
     STATUS="Success"
     WARNINGS="None"
-    
-    echo "[INFO] backup start"
     PROJECT_NAME=$(basename "$TARGET_DIR")
+    
+    LATEST_BACKUP=$(ls -t "$BACKUP_DEST/${PROJECT_NAME}_backup"*.tar.gz 2>/dev/null | head -n 1)
+
+    if [ -n "$LATEST_BACKUP" ]; then
+        echo "Checking for changes since last backup"
+        NEW_FILES=$(find "$TARGET_DIR" -newer "$LATEST_BACKUP" | head -n 1)
+        
+        if [ -z "$NEW_FILES" ]; then
+            echo "No changes detected in $PROJECT_NAME since the last backup. Skipping."
+            exit 0
+        fi
+    fi
+
+    echo "Preparing backup"
     ARCHIVE_NAME="${PROJECT_NAME}_backup.tar.gz"
     ARCHIVE_PATH="$BACKUP_DEST/$ARCHIVE_NAME"
 
     if [ -f "$ARCHIVE_PATH" ]; then
-        echo "[WARNING] Existing archive detected. creating new arch"
         TIMESTAMP=$(date +%s)
         ARCHIVE_NAME="${PROJECT_NAME}_backup_${TIMESTAMP}.tar.gz"
         ARCHIVE_PATH="$BACKUP_DEST/$ARCHIVE_NAME"
-        WARNINGS="Existing archive found. Appended timestamp to prevent overwrite."
     fi
 
-    echo "[INFO] Compressing "
+    echo "Compressing files"
     tar -czf "$ARCHIVE_PATH" -C "$(dirname "$TARGET_DIR")" "$PROJECT_NAME" 2>/dev/null
     
     if [ $? -ne 0 ]; then
-        WARNINGS="Some files were skipped due to insufficient permissions or read errors."
+        WARNINGS="Some files skipped due to read errors."
     fi
 
-    echo "[INFO] Moving archive to backup location"
-    
     if [ -f "$ARCHIVE_PATH" ]; then
         ARCHIVE_SIZE=$(du -h "$ARCHIVE_PATH" | awk '{print $1}')
     else
         STATUS="Failed"
-        WARNINGS="Failed to create the archive."
+        WARNINGS="Archive creation failed."
         ARCHIVE_SIZE="0 MB"
     fi
 fi
 
 END_TIME=$(date "+%Y-%m-%d %H:%M:%S")
-
-echo "Backup completed successfully."
-echo ""
 
 REPORT="=== Summary ===
 Backup Start Time  : $START_TIME
@@ -84,9 +86,5 @@ Status             : $STATUS
 Warnings/Errors    : $WARNINGS
 ================="
 
-
 echo "$REPORT"
-
-
 echo "$REPORT" >> "$LOG_FILE"
-echo "Backup report saved to: $LOG_FILE"
